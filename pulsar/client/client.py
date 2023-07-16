@@ -33,6 +33,15 @@ from pulsar.managers.util.pykube_util import (
     pykube_client_from_dict,
     stop_job,
 )
+from pulsar.managers.util.azure_batch import (
+    ensure_azure_batch_available,
+    get_azure_client,
+    TaskAddParameter,
+    TaskContainerSettings,
+    JobAddParameter,
+    PoolInformation,
+    BatchServiceClient
+)
 from pulsar.managers import status as manager_status
 from .action_mapper import (
     actions,
@@ -755,6 +764,67 @@ class LaunchesTesContainersMixin(CoexecutionLaunchMixin):
             "complete": "true" if tes_state_is_complete(tes_state) else "false",  # Ancient John, what were you thinking?
         }
 
+class LaunchesAzureContainersMixin(CoexecutionLaunchMixin):
+    """"""
+    ensure_library_available = ensure_azure_batch_available
+    execution_type = ExecutionType.SEQUENTIAL
+
+    def _launch_containers(
+        self,
+        pulsar_submit_container: CoexecutionContainerCommand,
+        tool_container: Optional[CoexecutionContainerCommand],
+        pulsar_finish_container: Optional[CoexecutionContainerCommand]
+    ) -> ExternalId:
+        volumes = [
+            CONTAINER_STAGING_DIRECTORY,
+        ]
+        pulsar_container_executor = self._container_to_executor('stage_in',pulsar_submit_container)
+        executors = [pulsar_container_executor]
+        if tool_container:
+            tool_container_executor = self._container_to_executor('tool',tool_container)
+            executors.append(tool_container_executor)
+
+            assert pulsar_finish_container
+            pulsar_finish_executor = self._container_to_executor('stage_out',pulsar_finish_container)
+            executors.append(pulsar_finish_executor)
+
+
+        job_name = f'galaxy-job-{self.job_id}'
+        pool_id = self.destination_params['pool_id']
+        job = JobAddParameter(id=job_name,
+                pool_info=PoolInformation(pool_id=pool_id))
+        self._batch_client.job.add(job)
+
+        self._batch_client.task.add_collection(job_name, executors)
+
+
+        return ExternalId(job_name)
+
+    def _container_to_executor(self, name: str, container: CoexecutionContainerCommand) -> TaskAddParameter:
+        return TaskAddParameter(
+            id=name,
+            command_line=f"/bin/sh -c \"{container.command} {container.args.join(' ')}\"",
+            resource_files=[],
+            container_settings=TaskContainerSettings(image_name=container.image)
+        )
+
+
+    @property
+    def _azure_client(self) -> BatchServiceClient:
+        return get_azure_client(self.destination_params)
+
+
+    def kill(self):
+        self._batch_client.job.delete(self.job_id)
+
+    def clean(self):
+        pass
+
+class AzureMessageCoexecutionJobClient(BaseMessageCoexecutionJobClient, LaunchesAzureContainersMixin):
+
+    def __init__(self, destination_params, job_id, client_manager):
+        super().__init__(destination_params, job_id, client_manager)
+        self._azure_client(destination_params)
 
 class TesPollingCoexecutionJobClient(BasePollingCoexecutionJobClient, LaunchesTesContainersMixin):
     """A client that co-executes pods via GA4GH TES and depends on amqp for status updates."""
