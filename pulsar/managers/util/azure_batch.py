@@ -14,7 +14,6 @@ try:
     from azure.batch import BatchServiceClient, models
     from azure.batch.models import BatchErrorException, TaskAddParameter,TaskContainerSettings, JobAddParameter, PoolInformation
     from azure.batch.batch_auth import SharedKeyCredentials
-
 except ImportError as e:
     azure = None
     AZURE_BATCH_IMPORT_MSG.format(msg=str(e))

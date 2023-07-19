@@ -27,6 +27,7 @@ from .client import (
     K8sPollingCoexecutionJobClient,
     MessageCLIJobClient,
     MessageJobClient,
+    AzureMessageCoexecutionJobClient,
     TesMessageCoexecutionJobClient,
     TesPollingCoexecutionJobClient,
 )
@@ -240,6 +241,8 @@ class MessageQueueClientManager(BaseRemoteConfiguredJobClientManager):
             return K8sMessageCoexecutionJobClient(destination_params, job_id, self)
         elif destination_params.get("tes_url", False):
             return TesMessageCoexecutionJobClient(destination_params, job_id, self)
+        elif destination_params.get("azure_batch", False):
+            return AzureMessageCoexecutionJobClient(destination_params, job_id, self)
         else:
             return MessageJobClient(destination_params, job_id, self)
 
